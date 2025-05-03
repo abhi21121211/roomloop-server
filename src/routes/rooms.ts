@@ -6,6 +6,7 @@ import {
   joinRoom,
   inviteUsers,
   getUserRooms,
+  getAllRooms,
 } from "../controllers/roomController";
 import {
   getRoomMessages,
@@ -22,10 +23,12 @@ const router = express.Router();
 // Protect all routes
 router.use(protect);
 
-// Room routes
+// Room routes - IMPORTANT: Specific routes must be defined BEFORE parameterized routes (like /:id)
+// Otherwise Express will try to interpret "/all" as a room ID
 router.post("/", createRoom);
 router.get("/public", getPublicRooms);
 router.get("/user", getUserRooms);
+router.get("/all", getAllRooms);
 router.get("/:id", getRoomById);
 router.post("/:roomId/join", joinRoom);
 router.post("/:roomId/invite", inviteUsers);
