@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import Room, { IRoom, RoomType } from "../models/Room";
 import User, { IUser } from "../models/User";
 import mongoose from "mongoose";
+import { io } from "../index"; // Import socket.io instance
 
 // Generate a random room code
 const generateRoomCode = (): string => {
@@ -143,8 +144,25 @@ export const getRoomById = async (
       }
     }
 
+    // Store previous status
+    const previousStatus = room.status;
+
     // Update room status based on current time
     room.updateStatus();
+
+    // If status changed to 'live', emit socket event
+    if (previousStatus !== "live" && room.status === "live") {
+      // Notify all participants and invited users
+      [...room.participants, ...room.invitedUsers].forEach((participant) => {
+        const participantId = participant._id || participant;
+        io.to(participantId.toString()).emit("room_status_changed", {
+          roomId: room._id,
+          roomTitle: room.title,
+          status: room.status,
+        });
+      });
+    }
+
     await room.save();
 
     res.status(200).json({
@@ -270,13 +288,35 @@ export const inviteUsers = async (
       return;
     }
 
+    // Check if creator is trying to invite themselves
+    if (usernames.includes(user.username)) {
+      res.status(400).json({
+        success: false,
+        message:
+          "You cannot invite yourself as you are already the host of this room",
+      });
+      return;
+    }
+
     // Find users by usernames
     const usersToInvite = await User.find({ username: { $in: usernames } });
 
-    if (usersToInvite.length === 0) {
+    // Check if any username doesn't exist
+    if (usersToInvite.length !== usernames.length) {
+      const foundUsernames = usersToInvite.map((user) => user.username);
+      const notFoundUsernames = usernames.filter(
+        (username: string) => !foundUsernames.includes(username)
+      );
+
       res.status(404).json({
         success: false,
-        message: "No users found with the provided usernames",
+        message: `User${
+          notFoundUsernames.length > 1 ? "s" : ""
+        } not found: ${notFoundUsernames.join(
+          ", "
+        )}. Please check the username${
+          notFoundUsernames.length > 1 ? "s" : ""
+        } and try again.`,
       });
       return;
     }
@@ -288,10 +328,17 @@ export const inviteUsers = async (
       $addToSet: { invitedUsers: { $each: userIds } },
     });
 
-    // Add room to each user's invitedToRooms
-    for (const userId of userIds) {
-      await User.findByIdAndUpdate(userId, {
+    // Add room to each user's invitedToRooms and emit socket event
+    for (const invitedUser of usersToInvite) {
+      await User.findByIdAndUpdate(invitedUser._id, {
         $addToSet: { invitedToRooms: room._id },
+      });
+
+      // Emit socket event to notify the invited user
+      io.to(invitedUser._id.toString()).emit("room_invitation", {
+        roomId: room._id,
+        roomTitle: room.title,
+        invitedBy: user.username,
       });
     }
 
@@ -363,22 +410,40 @@ export const getUserRooms = async (
       (populatedUser.invitedToRooms as unknown as IRoom[]).map(updateRoom)
     );
 
-    // Group rooms by status
-    const upcoming = [...createdRooms, ...joinedRooms, ...invitedToRooms]
-      .filter((room) => room.status === "scheduled")
-      .sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
+    // Helper function to deduplicate rooms by _id
+    const deduplicate = (rooms: IRoom[]): IRoom[] => {
+      const uniqueRooms = new Map<string, IRoom>();
+      rooms.forEach((room) => {
+        const roomId = room._id.toString();
+        if (!uniqueRooms.has(roomId)) {
+          uniqueRooms.set(roomId, room);
+        }
+      });
+      return Array.from(uniqueRooms.values());
+    };
 
-    const live = [...createdRooms, ...joinedRooms, ...invitedToRooms]
-      .filter((room) => room.status === "live")
-      .sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
+    // Combine and deduplicate rooms for different categories
+    const allRooms = [...createdRooms, ...joinedRooms, ...invitedToRooms];
 
-    const past = [...createdRooms, ...joinedRooms]
-      .filter((room) => room.status === "closed")
-      .sort((a, b) => b.endTime.getTime() - a.endTime.getTime());
+    // Group and deduplicate rooms by status
+    const upcoming = deduplicate(
+      allRooms.filter((room) => room.status === "scheduled")
+    ).sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
 
-    const invites = invitedToRooms
-      .filter((room) => room.status !== "closed")
-      .sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
+    const live = deduplicate(
+      allRooms.filter((room) => room.status === "live")
+    ).sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
+
+    const past = deduplicate(
+      [...createdRooms, ...joinedRooms].filter(
+        (room) => room.status === "closed"
+      )
+    ).sort((a, b) => b.endTime.getTime() - a.endTime.getTime());
+
+    // For invites, only include rooms the user was explicitly invited to
+    const invites = deduplicate(
+      invitedToRooms.filter((room) => room.status !== "closed")
+    ).sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
 
     res.status(200).json({
       success: true,

@@ -23,17 +23,36 @@ export const createReaction = async (
       return;
     }
 
-    // Check if user is a participant
+    // Check if user is a participant or creator
     const isParticipant = room.participants.some(
       (participantId) => participantId.toString() === user._id.toString()
     );
 
-    if (!isParticipant) {
-      res.status(403).json({
-        success: false,
-        message: "You must join the room to send reactions",
-      });
-      return;
+    const isCreator = room.creator.toString() === user._id.toString();
+
+    if (!isParticipant && !isCreator) {
+      // If not a participant yet, try to auto-join if user is invited
+      const isInvited = room.invitedUsers.some(
+        (invited) => invited.toString() === user._id.toString()
+      );
+
+      if (isInvited) {
+        // Auto-join the room for invited users
+        await Room.findByIdAndUpdate(roomId, {
+          $push: { participants: user._id },
+          $pull: { invitedUsers: user._id },
+        });
+
+        console.log(
+          `Auto-joined user ${user._id} to room ${roomId} for reaction`
+        );
+      } else {
+        res.status(403).json({
+          success: false,
+          message: "You must join the room to send reactions",
+        });
+        return;
+      }
     }
 
     // Check if room is live
@@ -92,15 +111,21 @@ export const getRoomReactions = async (
       return;
     }
 
-    // Check if user is a participant
+    // Check if user is authorized to view the room
     const isParticipant = room.participants.some(
       (participantId) => participantId.toString() === user._id.toString()
     );
 
-    if (!isParticipant) {
+    const isCreator = room.creator.toString() === user._id.toString();
+
+    const isInvited = room.invitedUsers.some(
+      (invited) => invited.toString() === user._id.toString()
+    );
+
+    if (!isParticipant && !isCreator && !isInvited) {
       res.status(403).json({
         success: false,
-        message: "You must join the room to view reactions",
+        message: "You are not authorized to view this room's reactions",
       });
       return;
     }
