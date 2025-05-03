@@ -462,3 +462,50 @@ export const getUserRooms = async (
     });
   }
 };
+
+// Get all rooms (both public and private where user has access)
+export const getAllRooms = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const user = req.user as IUser;
+
+    // Get all public rooms (excluding closed rooms)
+    const publicRooms = await Room.find({
+      roomType: RoomType.PUBLIC,
+      status: { $ne: "closed" }, // Not closed rooms
+    })
+      .populate("creator", "username")
+      .sort({ startTime: 1 });
+
+    // Get private rooms where the user is the creator, a participant, or invited
+    // Also exclude closed rooms
+    const privateRooms = await Room.find({
+      roomType: RoomType.PRIVATE,
+      status: { $ne: "closed" }, // Not closed rooms
+      $or: [
+        { creator: user._id },
+        { participants: user._id },
+        { invitedUsers: user._id },
+      ],
+    })
+      .populate("creator", "username")
+      .sort({ startTime: 1 });
+
+    // Combine the rooms
+    const allRooms = [...publicRooms, ...privateRooms];
+
+    res.status(200).json({
+      success: true,
+      count: allRooms.length,
+      rooms: allRooms,
+    });
+  } catch (error) {
+    console.error("Get all rooms error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch all rooms",
+    });
+  }
+};
