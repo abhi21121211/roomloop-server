@@ -4,6 +4,8 @@ import { Server as SocketIOServer } from "socket.io";
 import mongoose from "mongoose";
 import cors from "cors";
 import dotenv from "dotenv";
+import jwt from "jsonwebtoken";
+import User from "./models/User";
 
 // Load environment variables
 dotenv.config();
@@ -28,6 +30,9 @@ const io = new SocketIOServer(server, {
     credentials: true,
   },
 });
+
+// Export io for use in other files
+export { io };
 
 // Middleware
 app.use(express.json());
@@ -64,6 +69,39 @@ app.get("/", (req, res) => {
 });
 
 // Socket.IO connection handling
+io.use(async (socket, next) => {
+  try {
+    const token = socket.handshake.auth.token;
+    if (!token) {
+      return next(new Error("Authentication error"));
+    }
+
+    const decoded = jwt.verify(
+      token,
+      process.env.JWT_SECRET || "default_secret"
+    ) as { id: string };
+    const user = await User.findById(decoded.id);
+
+    if (!user) {
+      return next(new Error("User not found"));
+    }
+
+    // Associate socket with user ID for direct messaging
+    socket.join(user._id.toString());
+
+    // Store user data in socket for later use
+    (socket as any).user = {
+      id: user._id,
+      username: user.username,
+    };
+
+    next();
+  } catch (error) {
+    console.error("Socket authentication error:", error);
+    next(new Error("Authentication error"));
+  }
+});
+
 io.on("connection", (socket) => {
   console.log("User connected:", socket.id);
   console.log("Socket handshake:", socket.handshake.address);

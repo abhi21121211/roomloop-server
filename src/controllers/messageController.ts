@@ -89,17 +89,34 @@ export const createMessage = async (
       return;
     }
 
-    // Check if user is a participant
+    // Check if user is a participant or the creator
     const isParticipant = room.participants.some(
       (participant) => participant.toString() === user._id.toString()
     );
 
-    if (!isParticipant) {
-      res.status(403).json({
-        success: false,
-        message: "You must join the room to send messages",
-      });
-      return;
+    const isCreator = room.creator.toString() === user._id.toString();
+
+    if (!isParticipant && !isCreator) {
+      // If not a participant yet, try to auto-join if user is invited
+      const isInvited = room.invitedUsers.some(
+        (invited) => invited.toString() === user._id.toString()
+      );
+
+      if (isInvited) {
+        // Auto-join the room for invited users
+        await Room.findByIdAndUpdate(roomId, {
+          $push: { participants: user._id },
+          $pull: { invitedUsers: user._id },
+        });
+
+        console.log(`Auto-joined user ${user._id} to room ${roomId}`);
+      } else {
+        res.status(403).json({
+          success: false,
+          message: "You must join the room to send messages",
+        });
+        return;
+      }
     }
 
     // Create new message
