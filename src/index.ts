@@ -18,14 +18,19 @@ import userRoutes from "./routes/users";
 // Create Express app
 const app = express();
 const PORT = process.env.PORT || 5000;
+const NODE_ENV = process.env.NODE_ENV || "development";
+const isProduction = NODE_ENV === "production";
 
 // Create HTTP server
 const server = http.createServer(app);
 
+// Get CORS origin from environment or use default
+const CORS_ORIGIN = process.env.CORS_ORIGIN || "http://localhost:3000";
+
 // Initialize Socket.IO
 const io = new SocketIOServer(server, {
   cors: {
-    origin: "*", // Allow all origins for debugging
+    origin: isProduction ? CORS_ORIGIN : "*", // In production, restrict to specific origin
     methods: ["GET", "POST"],
     credentials: true,
   },
@@ -39,7 +44,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(
   cors({
-    origin: "*", // Allow all origins for debugging
+    origin: isProduction ? CORS_ORIGIN : "*", // In production, restrict to specific origin
     credentials: true,
   })
 );
@@ -51,7 +56,11 @@ const MONGODB_URI =
 mongoose
   .connect(MONGODB_URI)
   .then(() => {
-    console.log("Connected to MongoDB");
+    console.log(
+      `Connected to MongoDB (${
+        isProduction ? "production" : "development"
+      } mode)`
+    );
   })
   .catch((error) => {
     console.error("MongoDB connection error:", error);
@@ -65,8 +74,39 @@ app.use("/api/users", userRoutes);
 
 // Basic route
 app.get("/", (req, res) => {
-  res.send("RoomLoop API is running");
+  res.json({
+    status: "success",
+    message: "RoomLoop API is running",
+    environment: NODE_ENV,
+    timestamp: new Date().toISOString(),
+  });
 });
+
+// Health check endpoint for monitoring services
+app.get("/health", (req, res) => {
+  res.json({
+    status: "healthy",
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Generic error handler
+app.use(
+  (
+    err: any,
+    req: express.Request,
+    res: express.Response,
+    next: express.NextFunction
+  ) => {
+    console.error("Server error:", err);
+    res.status(err.status || 500).json({
+      success: false,
+      message: isProduction ? "Server error" : err.message,
+      stack: isProduction ? undefined : err.stack,
+    });
+  }
+);
 
 // Socket.IO connection handling
 io.use(async (socket, next) => {
@@ -104,7 +144,11 @@ io.use(async (socket, next) => {
 
 io.on("connection", (socket) => {
   console.log("User connected:", socket.id);
-  console.log("Socket handshake:", socket.handshake.address);
+
+  // Only log socket handshake in development mode
+  if (!isProduction) {
+    console.log("Socket handshake:", socket.handshake.address);
+  }
 
   // Join a room
   socket.on("join_room", (roomId) => {
@@ -176,6 +220,6 @@ io.on("connection", (socket) => {
 
 // Start server
 server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`Server running on port ${PORT} in ${NODE_ENV} mode`);
   console.log(`Socket.IO server is ready to accept connections`);
 });
