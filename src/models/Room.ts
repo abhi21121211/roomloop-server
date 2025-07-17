@@ -115,7 +115,6 @@ RoomSchema.pre<IRoom>("save", function (next) {
   next();
 });
 
-<<<<<<< HEAD
 // Database indexes for improved query performance
 RoomSchema.index({ creator: 1 }); // For fetching user's created rooms
 RoomSchema.index({ participants: 1 }); // For fetching user's joined rooms
@@ -134,6 +133,4 @@ RoomSchema.index({
   status: 1,
 }); // Compound index for creator's room management
 
-=======
->>>>>>> 1c655bd80e36278e4c80a11b747c74f161606875
 export default mongoose.model<IRoom>("Room", RoomSchema);
