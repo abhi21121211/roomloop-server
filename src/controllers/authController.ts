@@ -1,8 +1,11 @@
 import { Request, Response } from "express";
 import jwt from "jsonwebtoken";
 import User, { IUser } from "../models/User";
+<<<<<<< HEAD
 import { recordLoginAttempt } from "../middleware/security";
 import { loggerHelpers } from "../utils/logger";
+=======
+>>>>>>> 1c655bd80e36278e4c80a11b747c74f161606875
 
 // Generate JWT token
 const generateToken = (userId: string): string => {
@@ -40,6 +43,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
     // Generate token
     const token = generateToken(user._id);
 
+<<<<<<< HEAD
     // Log successful registration
     loggerHelpers.logUserAction(user._id, "register", {
       username: user.username,
@@ -47,6 +51,8 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       ip: req.ip,
     });
 
+=======
+>>>>>>> 1c655bd80e36278e4c80a11b747c74f161606875
     res.status(201).json({
       success: true,
       token,
@@ -57,11 +63,15 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       },
     });
   } catch (error) {
+<<<<<<< HEAD
     loggerHelpers.logError(error as Error, {
       action: "register",
       ip: req.ip,
       body: { username: req.body.username, email: req.body.email },
     });
+=======
+    console.error("Registration error:", error);
+>>>>>>> 1c655bd80e36278e4c80a11b747c74f161606875
     res.status(500).json({
       success: false,
       message: "Registration failed",
@@ -79,10 +89,14 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       $or: [{ email: login }, { username: login }],
     });
 
+<<<<<<< HEAD
     const identifier = login.toLowerCase();
 
     if (!user) {
       recordLoginAttempt(identifier, false);
+=======
+    if (!user) {
+>>>>>>> 1c655bd80e36278e4c80a11b747c74f161606875
       res.status(401).json({
         success: false,
         message: "Invalid credentials",
@@ -93,7 +107,10 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     // Check password
     const isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) {
+<<<<<<< HEAD
       recordLoginAttempt(identifier, false);
+=======
+>>>>>>> 1c655bd80e36278e4c80a11b747c74f161606875
       res.status(401).json({
         success: false,
         message: "Invalid credentials",
@@ -101,6 +118,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
+<<<<<<< HEAD
     // Record successful login
     recordLoginAttempt(identifier, true);
 
@@ -111,6 +129,8 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       userAgent: req.get("User-Agent"),
     });
 
+=======
+>>>>>>> 1c655bd80e36278e4c80a11b747c74f161606875
     // Generate token
     const token = generateToken(user._id);
 
@@ -124,11 +144,15 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       },
     });
   } catch (error) {
+<<<<<<< HEAD
     loggerHelpers.logError(error as Error, {
       action: "login",
       ip: req.ip,
       login: req.body.login,
     });
+=======
+    console.error("Login error:", error);
+>>>>>>> 1c655bd80e36278e4c80a11b747c74f161606875
     res.status(500).json({
       success: false,
       message: "Login failed",

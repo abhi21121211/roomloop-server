@@ -29,10 +29,13 @@ const MessageSchema: Schema = new Schema(
   }
 );
 
+<<<<<<< HEAD
 // Database indexes for improved query performance
 MessageSchema.index({ room: 1, createdAt: -1 }); // For fetching room messages sorted by time
 MessageSchema.index({ sender: 1, createdAt: -1 }); // For fetching user's messages
 MessageSchema.index({ room: 1, sender: 1 }); // For filtering messages by room and sender
 MessageSchema.index({ createdAt: -1 }); // For sorting by creation date
 
+=======
+>>>>>>> 1c655bd80e36278e4c80a11b747c74f161606875
 export default mongoose.model<IMessage>("Message", MessageSchema);

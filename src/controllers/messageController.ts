@@ -2,7 +2,10 @@ import { Request, Response } from "express";
 import Message from "../models/Message";
 import Room, { RoomType } from "../models/Room";
 import { IUser } from "../models/User";
+<<<<<<< HEAD
 import { io } from "../index";
+=======
+>>>>>>> 1c655bd80e36278e4c80a11b747c74f161606875
 
 // Get messages for a room
 export const getRoomMessages = async (
@@ -135,6 +138,7 @@ export const createMessage = async (
       "username"
     );
 
+<<<<<<< HEAD
     // Emit socket event to all users in the room
     io.to(roomId).emit("receive_message", {
       roomId: roomId,
@@ -147,6 +151,8 @@ export const createMessage = async (
       populatedMessage
     );
 
+=======
+>>>>>>> 1c655bd80e36278e4c80a11b747c74f161606875
     res.status(201).json({
       success: true,
       message: populatedMessage,

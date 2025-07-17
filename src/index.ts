@@ -5,12 +5,16 @@ import mongoose from "mongoose";
 import cors from "cors";
 import dotenv from "dotenv";
 import jwt from "jsonwebtoken";
+<<<<<<< HEAD
 import morgan from "morgan";
 import compression from "compression";
 import User from "./models/User";
 import logger, { httpLogStream, loggerHelpers } from "./utils/logger";
 import { connectDatabase } from "./config/database";
 import cacheService from "./services/cache";
+=======
+import User from "./models/User";
+>>>>>>> 1c655bd80e36278e4c80a11b747c74f161606875
 
 // Load environment variables
 dotenv.config();
@@ -19,7 +23,10 @@ dotenv.config();
 import authRoutes from "./routes/auth";
 import roomRoutes from "./routes/rooms";
 import userRoutes from "./routes/users";
+<<<<<<< HEAD
 import aiRoutes from "./routes/ai";
+=======
+>>>>>>> 1c655bd80e36278e4c80a11b747c74f161606875
 
 // Create Express app
 const app = express();
@@ -45,6 +52,7 @@ const io = new SocketIOServer(server, {
 // Export io for use in other files
 export { io };
 
+<<<<<<< HEAD
 // Security middleware
 import {
   securityHeaders,
@@ -90,12 +98,44 @@ app.use(cors(corsOptions));
 
 // Connect to MongoDB with enhanced configuration
 connectDatabase();
+=======
+// Middleware
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(
+  cors({
+    origin: isProduction ? CORS_ORIGIN : "*", // In production, restrict to specific origin
+    credentials: true,
+  })
+);
+
+// Connect to MongoDB
+const MONGODB_URI =
+  process.env.MONGODB_URI || "mongodb://localhost:27017/roomloop";
+
+mongoose
+  .connect(MONGODB_URI)
+  .then(() => {
+    console.log(
+      `Connected to MongoDB (${
+        isProduction ? "production" : "development"
+      } mode)`
+    );
+  })
+  .catch((error) => {
+    console.error("MongoDB connection error:", error);
+    process.exit(1);
+  });
+>>>>>>> 1c655bd80e36278e4c80a11b747c74f161606875
 
 // Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/rooms", roomRoutes);
 app.use("/api/users", userRoutes);
+<<<<<<< HEAD
 app.use("/api/ai", aiRoutes);
+=======
+>>>>>>> 1c655bd80e36278e4c80a11b747c74f161606875
 
 // Basic route
 app.get("/", (req, res) => {
@@ -124,6 +164,7 @@ app.use(
     res: express.Response,
     next: express.NextFunction
   ) => {
+<<<<<<< HEAD
     loggerHelpers.logError(err, {
       method: req.method,
       url: req.url,
@@ -132,6 +173,9 @@ app.use(
       userId: req.user?.id,
     });
 
+=======
+    console.error("Server error:", err);
+>>>>>>> 1c655bd80e36278e4c80a11b747c74f161606875
     res.status(err.status || 500).json({
       success: false,
       message: isProduction ? "Server error" : err.message,
@@ -140,7 +184,11 @@ app.use(
   }
 );
 
+<<<<<<< HEAD
 // Socket.IO connection handling with enhanced performance
+=======
+// Socket.IO connection handling
+>>>>>>> 1c655bd80e36278e4c80a11b747c74f161606875
 io.use(async (socket, next) => {
   try {
     const token = socket.handshake.auth.token;
@@ -167,6 +215,7 @@ io.use(async (socket, next) => {
       username: user.username,
     };
 
+<<<<<<< HEAD
     // Track online user in cache
     await cacheService.setOnlineUser(user._id.toString(), socket.id);
 
@@ -179,6 +228,11 @@ io.use(async (socket, next) => {
     next();
   } catch (error) {
     loggerHelpers.logError(error as Error, { operation: "socket_auth" });
+=======
+    next();
+  } catch (error) {
+    console.error("Socket authentication error:", error);
+>>>>>>> 1c655bd80e36278e4c80a11b747c74f161606875
     next(new Error("Authentication error"));
   }
 });
@@ -191,6 +245,7 @@ io.on("connection", (socket) => {
     console.log("Socket handshake:", socket.handshake.address);
   }
 
+<<<<<<< HEAD
   // Join a room with enhanced tracking
   socket.on("join_room", async (roomId) => {
     try {
@@ -262,10 +317,29 @@ io.on("connection", (socket) => {
         socketId: socket.id,
       });
     }
+=======
+  // Join a room
+  socket.on("join_room", (roomId) => {
+    socket.join(roomId);
+    console.log(`User ${socket.id} joined room: ${roomId}`);
+
+    // Confirm room joined back to the client
+    socket.emit("room_joined", { roomId, status: "success" });
+  });
+
+  // Leave a room
+  socket.on("leave_room", (roomId) => {
+    socket.leave(roomId);
+    console.log(`User ${socket.id} left room: ${roomId}`);
+
+    // Confirm room left back to the client
+    socket.emit("room_left", { roomId, status: "success" });
+>>>>>>> 1c655bd80e36278e4c80a11b747c74f161606875
   });
 
   // Handle chat messages
   socket.on("send_message", (data) => {
+<<<<<<< HEAD
     console.log("Message received via socket:", data);
 
     // Extract the message and roomId
@@ -287,6 +361,25 @@ io.on("connection", (socket) => {
     });
 
     console.log(`Broadcasting message to room ${roomId}:`, message);
+=======
+    console.log("Message received:", data);
+
+    // Make sure we're sending consistent format for the message
+    // This ensures both roomId and message object are present
+    const messageData = {
+      roomId: data.roomId,
+      message: data.message,
+    };
+
+    // Broadcast to everyone in the room including the sender
+    io.to(data.roomId).emit("receive_message", messageData);
+
+    // Also emit a debug event just for testing
+    socket.emit("message_sent_confirmation", {
+      status: "success",
+      message: "Message sent to room: " + data.roomId,
+    });
+>>>>>>> 1c655bd80e36278e4c80a11b747c74f161606875
   });
 
   // Handle reactions
@@ -307,6 +400,7 @@ io.on("connection", (socket) => {
     io.to(data.roomId).emit("receive_reaction", reactionData);
   });
 
+<<<<<<< HEAD
   // Handle disconnection with cleanup
   socket.on("disconnect", async (reason) => {
     try {
@@ -330,6 +424,11 @@ io.on("connection", (socket) => {
         socketId: socket.id,
       });
     }
+=======
+  // Handle disconnection
+  socket.on("disconnect", (reason) => {
+    console.log("User disconnected:", socket.id, "Reason:", reason);
+>>>>>>> 1c655bd80e36278e4c80a11b747c74f161606875
   });
 
   // Handle errors
@@ -340,6 +439,7 @@ io.on("connection", (socket) => {
 
 // Start server
 server.listen(PORT, () => {
+<<<<<<< HEAD
   logger.info("Server started", {
     port: PORT,
     environment: NODE_ENV,
@@ -347,4 +447,8 @@ server.listen(PORT, () => {
     timestamp: new Date().toISOString(),
   });
   logger.info("Socket.IO server ready to accept connections");
+=======
+  console.log(`Server running on port ${PORT} in ${NODE_ENV} mode`);
+  console.log(`Socket.IO server is ready to accept connections`);
+>>>>>>> 1c655bd80e36278e4c80a11b747c74f161606875
 });

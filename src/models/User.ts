@@ -77,6 +77,7 @@ UserSchema.methods.comparePassword = async function (
   return bcrypt.compare(candidatePassword, this.password);
 };
 
+<<<<<<< HEAD
 // Database indexes for improved query performance
 UserSchema.index({ email: 1 }, { unique: true }); // Unique index for email
 UserSchema.index({ username: 1 }, { unique: true }); // Unique index for username
@@ -86,4 +87,6 @@ UserSchema.index({ invitedToRooms: 1 }); // For fetching user's invited rooms
 UserSchema.index({ createdAt: 1 }); // For sorting by registration date
 UserSchema.index({ email: 1, username: 1 }); // Compound index for login queries
 
+=======
+>>>>>>> 1c655bd80e36278e4c80a11b747c74f161606875
 export default mongoose.model<IUser>("User", UserSchema);
