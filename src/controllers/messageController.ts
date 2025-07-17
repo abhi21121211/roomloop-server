@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import Message from "../models/Message";
 import Room, { RoomType } from "../models/Room";
 import { IUser } from "../models/User";
+import { io } from "../index";
 
 // Get messages for a room
 export const getRoomMessages = async (
@@ -132,6 +133,18 @@ export const createMessage = async (
     const populatedMessage = await Message.findById(message._id).populate(
       "sender",
       "username"
+    );
+
+    // Emit socket event to all users in the room
+    io.to(roomId).emit("receive_message", {
+      roomId: roomId,
+      message: populatedMessage,
+      senderId: user._id.toString(), // Include sender ID for duplicate detection
+    });
+
+    console.log(
+      `Message saved and broadcasted to room ${roomId}:`,
+      populatedMessage
     );
 
     res.status(201).json({

@@ -1,6 +1,8 @@
 import { Request, Response } from "express";
 import jwt from "jsonwebtoken";
 import User, { IUser } from "../models/User";
+import { recordLoginAttempt } from "../middleware/security";
+import { loggerHelpers } from "../utils/logger";
 
 // Generate JWT token
 const generateToken = (userId: string): string => {
@@ -38,6 +40,13 @@ export const register = async (req: Request, res: Response): Promise<void> => {
     // Generate token
     const token = generateToken(user._id);
 
+    // Log successful registration
+    loggerHelpers.logUserAction(user._id, "register", {
+      username: user.username,
+      email: user.email,
+      ip: req.ip,
+    });
+
     res.status(201).json({
       success: true,
       token,
@@ -48,7 +57,11 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       },
     });
   } catch (error) {
-    console.error("Registration error:", error);
+    loggerHelpers.logError(error as Error, {
+      action: "register",
+      ip: req.ip,
+      body: { username: req.body.username, email: req.body.email },
+    });
     res.status(500).json({
       success: false,
       message: "Registration failed",
@@ -66,7 +79,10 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       $or: [{ email: login }, { username: login }],
     });
 
+    const identifier = login.toLowerCase();
+
     if (!user) {
+      recordLoginAttempt(identifier, false);
       res.status(401).json({
         success: false,
         message: "Invalid credentials",
@@ -77,12 +93,23 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     // Check password
     const isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) {
+      recordLoginAttempt(identifier, false);
       res.status(401).json({
         success: false,
         message: "Invalid credentials",
       });
       return;
     }
+
+    // Record successful login
+    recordLoginAttempt(identifier, true);
+
+    // Log successful login
+    loggerHelpers.logUserAction(user._id, "login", {
+      username: user.username,
+      ip: req.ip,
+      userAgent: req.get("User-Agent"),
+    });
 
     // Generate token
     const token = generateToken(user._id);
@@ -97,7 +124,11 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       },
     });
   } catch (error) {
-    console.error("Login error:", error);
+    loggerHelpers.logError(error as Error, {
+      action: "login",
+      ip: req.ip,
+      login: req.body.login,
+    });
     res.status(500).json({
       success: false,
       message: "Login failed",

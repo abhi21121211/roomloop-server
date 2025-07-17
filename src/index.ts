@@ -5,7 +5,12 @@ import mongoose from "mongoose";
 import cors from "cors";
 import dotenv from "dotenv";
 import jwt from "jsonwebtoken";
+import morgan from "morgan";
+import compression from "compression";
 import User from "./models/User";
+import logger, { httpLogStream, loggerHelpers } from "./utils/logger";
+import { connectDatabase } from "./config/database";
+import cacheService from "./services/cache";
 
 // Load environment variables
 dotenv.config();
@@ -14,6 +19,7 @@ dotenv.config();
 import authRoutes from "./routes/auth";
 import roomRoutes from "./routes/rooms";
 import userRoutes from "./routes/users";
+import aiRoutes from "./routes/ai";
 
 // Create Express app
 const app = express();
@@ -39,38 +45,57 @@ const io = new SocketIOServer(server, {
 // Export io for use in other files
 export { io };
 
-// Middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Security middleware
+import {
+  securityHeaders,
+  generalLimiter,
+  sanitizeInput,
+  corsOptions,
+} from "./middleware/security";
+
+// Apply security headers
+app.use(securityHeaders);
+
+// Apply rate limiting
+app.use(generalLimiter);
+
+// HTTP request logging
+app.use(morgan("combined", { stream: httpLogStream }));
+
+// Response compression (gzip/brotli)
 app.use(
-  cors({
-    origin: isProduction ? CORS_ORIGIN : "*", // In production, restrict to specific origin
-    credentials: true,
+  compression({
+    level: 6, // Compression level (0-9)
+    threshold: 1024, // Only compress responses larger than 1KB
+    filter: (req, res) => {
+      // Don't compress if client doesn't support it
+      if (req.headers["x-no-compression"]) {
+        return false;
+      }
+      // Use compression for all other requests
+      return compression.filter(req, res);
+    },
   })
 );
 
-// Connect to MongoDB
-const MONGODB_URI =
-  process.env.MONGODB_URI || "mongodb://localhost:27017/roomloop";
+// Middleware
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
-mongoose
-  .connect(MONGODB_URI)
-  .then(() => {
-    console.log(
-      `Connected to MongoDB (${
-        isProduction ? "production" : "development"
-      } mode)`
-    );
-  })
-  .catch((error) => {
-    console.error("MongoDB connection error:", error);
-    process.exit(1);
-  });
+// Apply input sanitization
+app.use(sanitizeInput);
+
+// CORS with proper configuration
+app.use(cors(corsOptions));
+
+// Connect to MongoDB with enhanced configuration
+connectDatabase();
 
 // Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/rooms", roomRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/ai", aiRoutes);
 
 // Basic route
 app.get("/", (req, res) => {
@@ -99,7 +124,14 @@ app.use(
     res: express.Response,
     next: express.NextFunction
   ) => {
-    console.error("Server error:", err);
+    loggerHelpers.logError(err, {
+      method: req.method,
+      url: req.url,
+      ip: req.ip,
+      userAgent: req.get("User-Agent"),
+      userId: req.user?.id,
+    });
+
     res.status(err.status || 500).json({
       success: false,
       message: isProduction ? "Server error" : err.message,
@@ -108,7 +140,7 @@ app.use(
   }
 );
 
-// Socket.IO connection handling
+// Socket.IO connection handling with enhanced performance
 io.use(async (socket, next) => {
   try {
     const token = socket.handshake.auth.token;
@@ -135,9 +167,18 @@ io.use(async (socket, next) => {
       username: user.username,
     };
 
+    // Track online user in cache
+    await cacheService.setOnlineUser(user._id.toString(), socket.id);
+
+    loggerHelpers.logSocketEvent(
+      "user_connected",
+      socket.id,
+      user._id.toString()
+    );
+
     next();
   } catch (error) {
-    console.error("Socket authentication error:", error);
+    loggerHelpers.logError(error as Error, { operation: "socket_auth" });
     next(new Error("Authentication error"));
   }
 });
@@ -150,43 +191,102 @@ io.on("connection", (socket) => {
     console.log("Socket handshake:", socket.handshake.address);
   }
 
-  // Join a room
-  socket.on("join_room", (roomId) => {
-    socket.join(roomId);
-    console.log(`User ${socket.id} joined room: ${roomId}`);
+  // Join a room with enhanced tracking
+  socket.on("join_room", async (roomId) => {
+    try {
+      socket.join(roomId);
 
-    // Confirm room joined back to the client
-    socket.emit("room_joined", { roomId, status: "success" });
+      // Track room participant in cache
+      if ((socket as any).user?.id) {
+        await cacheService.addRoomParticipant(roomId, (socket as any).user.id);
+      }
+
+      loggerHelpers.logSocketEvent(
+        "room_joined",
+        socket.id,
+        (socket as any).user?.id,
+        roomId
+      );
+
+      // Confirm room joined back to the client
+      socket.emit("room_joined", { roomId, status: "success" });
+
+      // Notify other users in the room
+      socket.to(roomId).emit("user_joined_room", {
+        userId: (socket as any).user?.id,
+        username: (socket as any).user?.username,
+        roomId,
+      });
+    } catch (error) {
+      loggerHelpers.logError(error as Error, {
+        operation: "socket_join_room",
+        roomId,
+        socketId: socket.id,
+      });
+    }
   });
 
-  // Leave a room
-  socket.on("leave_room", (roomId) => {
-    socket.leave(roomId);
-    console.log(`User ${socket.id} left room: ${roomId}`);
+  // Leave a room with enhanced tracking
+  socket.on("leave_room", async (roomId) => {
+    try {
+      socket.leave(roomId);
 
-    // Confirm room left back to the client
-    socket.emit("room_left", { roomId, status: "success" });
+      // Remove from room participants cache
+      if ((socket as any).user?.id) {
+        await cacheService.removeRoomParticipant(
+          roomId,
+          (socket as any).user.id
+        );
+      }
+
+      loggerHelpers.logSocketEvent(
+        "room_left",
+        socket.id,
+        (socket as any).user?.id,
+        roomId
+      );
+
+      // Confirm room left back to the client
+      socket.emit("room_left", { roomId, status: "success" });
+
+      // Notify other users in the room
+      socket.to(roomId).emit("user_left_room", {
+        userId: (socket as any).user?.id,
+        username: (socket as any).user?.username,
+        roomId,
+      });
+    } catch (error) {
+      loggerHelpers.logError(error as Error, {
+        operation: "socket_leave_room",
+        roomId,
+        socketId: socket.id,
+      });
+    }
   });
 
   // Handle chat messages
   socket.on("send_message", (data) => {
-    console.log("Message received:", data);
+    console.log("Message received via socket:", data);
 
-    // Make sure we're sending consistent format for the message
-    // This ensures both roomId and message object are present
-    const messageData = {
-      roomId: data.roomId,
-      message: data.message,
-    };
+    // Extract the message and roomId
+    const message = data.message || data;
+    const roomId =
+      data.roomId ||
+      (message.room &&
+        (typeof message.room === "string" ? message.room : message.room._id));
 
-    // Broadcast to everyone in the room including the sender
-    io.to(data.roomId).emit("receive_message", messageData);
+    if (!roomId) {
+      console.error("No roomId found in message data");
+      return;
+    }
 
-    // Also emit a debug event just for testing
-    socket.emit("message_sent_confirmation", {
-      status: "success",
-      message: "Message sent to room: " + data.roomId,
+    // Broadcast the message to everyone in the room
+    io.to(roomId).emit("receive_message", {
+      roomId: roomId,
+      message: message,
     });
+
+    console.log(`Broadcasting message to room ${roomId}:`, message);
   });
 
   // Handle reactions
@@ -207,9 +307,29 @@ io.on("connection", (socket) => {
     io.to(data.roomId).emit("receive_reaction", reactionData);
   });
 
-  // Handle disconnection
-  socket.on("disconnect", (reason) => {
-    console.log("User disconnected:", socket.id, "Reason:", reason);
+  // Handle disconnection with cleanup
+  socket.on("disconnect", async (reason) => {
+    try {
+      // Remove from online users cache
+      if ((socket as any).user?.id) {
+        await cacheService.removeOnlineUser((socket as any).user.id);
+      }
+
+      loggerHelpers.logSocketEvent(
+        "user_disconnected",
+        socket.id,
+        (socket as any).user?.id,
+        undefined,
+        {
+          reason,
+        }
+      );
+    } catch (error) {
+      loggerHelpers.logError(error as Error, {
+        operation: "socket_disconnect",
+        socketId: socket.id,
+      });
+    }
   });
 
   // Handle errors
@@ -220,6 +340,11 @@ io.on("connection", (socket) => {
 
 // Start server
 server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT} in ${NODE_ENV} mode`);
-  console.log(`Socket.IO server is ready to accept connections`);
+  logger.info("Server started", {
+    port: PORT,
+    environment: NODE_ENV,
+    pid: process.pid,
+    timestamp: new Date().toISOString(),
+  });
+  logger.info("Socket.IO server ready to accept connections");
 });

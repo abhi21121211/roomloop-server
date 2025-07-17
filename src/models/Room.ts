@@ -115,4 +115,22 @@ RoomSchema.pre<IRoom>("save", function (next) {
   next();
 });
 
+// Database indexes for improved query performance
+RoomSchema.index({ creator: 1 }); // For fetching user's created rooms
+RoomSchema.index({ participants: 1 }); // For fetching user's joined rooms
+RoomSchema.index({ invitedUsers: 1 }); // For fetching user's invited rooms
+RoomSchema.index({ roomType: 1, status: 1 }); // For public/private room queries with status
+RoomSchema.index({ startTime: 1 }); // For sorting by start time
+RoomSchema.index({ endTime: 1 }); // For sorting by end time
+RoomSchema.index({ status: 1, startTime: 1 }); // Compound index for status + time queries
+RoomSchema.index({ roomType: 1, startTime: 1 }); // Compound index for type + time queries
+RoomSchema.index({ code: 1 }, { unique: true }); // Unique index for room codes
+RoomSchema.index({ title: "text", description: "text", tags: "text" }); // Text search index
+RoomSchema.index({ createdAt: 1 }); // For sorting by creation date
+RoomSchema.index({
+  creator: 1,
+  roomType: 1,
+  status: 1,
+}); // Compound index for creator's room management
+
 export default mongoose.model<IRoom>("Room", RoomSchema);

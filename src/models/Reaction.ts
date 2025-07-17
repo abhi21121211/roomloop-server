@@ -29,4 +29,10 @@ const ReactionSchema: Schema = new Schema(
   }
 );
 
+// Database indexes for improved query performance
+ReactionSchema.index({ room: 1, createdAt: -1 }); // For fetching room reactions sorted by time
+ReactionSchema.index({ user: 1, createdAt: -1 }); // For fetching user's reactions
+ReactionSchema.index({ room: 1, user: 1, emoji: 1 }); // For preventing duplicate reactions
+ReactionSchema.index({ room: 1, emoji: 1 }); // For grouping reactions by emoji in rooms
+
 export default mongoose.model<IReaction>("Reaction", ReactionSchema);
